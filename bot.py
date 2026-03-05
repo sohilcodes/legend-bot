@@ -5,6 +5,7 @@ import requests
 import threading
 import os
 import pytz
+from flask import Flask
 from apscheduler.schedulers.background import BackgroundScheduler
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -247,7 +248,18 @@ def signal_loop():
         time.sleep(2)
 
 threading.Thread(target=signal_loop, daemon=True).start()
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 print("🚀 FULL FINAL WORKING BOT RUNNING")
+threading.Thread(target=run_web).start()
+
 bot.infinity_polling(skip_pending=True)
   
