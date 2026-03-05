@@ -22,7 +22,10 @@ WIN_STICKER_1 = "CAACAgUAAxkBAAFDlppppT351aarhWh_TG_tUy7uko-n6QACZRYAAqYtOVXs-2X
 WIN_STICKER_2 = "CAACAgUAAxkBAAFDlpxppT4FFNkF13KJ8AuYgZD4z7HWpAACWhoAAiWkMFXi4IKHogJcszoE"
 LOSS_STICKER = "CAACAgUAAxkBAAFDlqJppT4bXj3NuDu4BZ6pSSVG_N8qcgACHhoAAsCAWFdNIjQkeNqKlzoE"
 
-bot = telebot.TeleBot(BOT_TOKEN)  # NO markdown (stable)
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# IMPORTANT FIX
+bot.delete_webhook()
 
 # ========= GLOBAL =========
 pending_ids = {}
@@ -211,7 +214,6 @@ def signal_loop():
         number = latest["number"]
         vip_users = get_vip_users()
 
-        # RESULT CHECK
         if finished in predictions:
             pred = predictions.pop(finished)
             actual = number_to_bs(number)
@@ -233,7 +235,6 @@ def signal_loop():
                         reply_markup=signal_markup())
                     bot.send_sticker(uid, LOSS_STICKER)
 
-        # NEW SIGNAL
         if finished and finished != last_finished_period:
             last_finished_period = finished
             next_period = str(int(finished) + 1)
@@ -248,6 +249,7 @@ def signal_loop():
         time.sleep(2)
 
 threading.Thread(target=signal_loop, daemon=True).start()
+
 app = Flask(__name__)
 
 @app.route('/')
@@ -259,7 +261,7 @@ def run_web():
     app.run(host="0.0.0.0", port=port)
 
 print("🚀 FULL FINAL WORKING BOT RUNNING")
-threading.Thread(target=run_web).start()
 
-bot.infinity_polling(skip_pending=True)
-  
+threading.Thread(target=run_web, daemon=True).start()
+
+bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
