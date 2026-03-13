@@ -1,267 +1,217 @@
-import telebot
-import time
-import json
-import requests
-import threading
-import os
-import pytz
-from flask import Flask
-from apscheduler.schedulers.background import BackgroundScheduler
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WinGo DM Style</title>
 
-# ============ CONFIG ============
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 6411315434
-INVITE_LINK = "https://www.dmwin1.com/#/register?invitationCode=112542087887"
-DB_FILE = "users.json"
-CLICKS_FILE = "clicks.json"
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?ts="
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
-# 🎯 STICKERS
-WIN_STICKER_1 = "CAACAgUAAxkBAAFDlppppT351aarhWh_TG_tUy7uko-n6QACZRYAAqYtOVXs-2XdGTALsDoE"
-WIN_STICKER_2 = "CAACAgUAAxkBAAFDlpxppT4FFNkF13KJ8AuYgZD4z7HWpAACWhoAAiWkMFXi4IKHogJcszoE"
-LOSS_STICKER = "CAACAgUAAxkBAAFDlqJppT4bXj3NuDu4BZ6pSSVG_N8qcgACHhoAAsCAWFdNIjQkeNqKlzoE"
+<style>
 
-bot = telebot.TeleBot(BOT_TOKEN)
+body{
+background:#0b1220;
+font-family:Arial;
+color:white;
+text-align:center;
+margin:0;
+}
 
-# IMPORTANT FIX
-bot.delete_webhook()
+.header{
+background:#111827;
+padding:15px;
+font-size:22px;
+font-weight:bold;
+}
 
-# ========= GLOBAL =========
-pending_ids = {}
-user_stage = {}
-signals_enabled = True
-last_finished_period = None
-predictions = {}
-wins = 0
-losses = 0
-total_signals = 0
+.card{
+background:#1f2937;
+margin:12px;
+padding:18px;
+border-radius:12px;
+}
 
-# ========= FILE HELPERS =========
-def load_json(file, default):
-    if os.path.exists(file):
-        with open(file, "r") as f:
-            return json.load(f)
-    return default
+.big{color:#22c55e;font-size:34px}
+.small{color:#ef4444;font-size:34px}
 
-def save_json(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f, indent=2)
+.pred{font-size:40px;margin:8px}
 
-users = load_json(DB_FILE, [])
-clicks_data = load_json(CLICKS_FILE, {})
+.timer{
+font-size:28px;
+color:yellow;
+}
 
-def save_user(user):
-    if user.id not in users:
-        users.append(user.id)
-        save_json(DB_FILE, users)
+.win{color:#00ff95;font-size:24px}
+.loss{color:#ff4d4d;font-size:24px}
 
-def track_click(user_id):
-    uid = str(user_id)
-    clicks_data[uid] = clicks_data.get(uid, 0) + 1
-    save_json(CLICKS_FILE, clicks_data)
+.row{
+display:flex;
+justify-content:space-between;
+padding:8px;
+border-bottom:1px solid #111;
+}
 
-def get_vip_users():
-    return [uid for uid, stage in user_stage.items() if stage == 2]
+.footer{
+position:fixed;
+bottom:0;
+width:100%;
+background:#020617;
+padding:10px;
+font-size:14px;
+}
 
-def signal_markup():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🔗 Register on DM Win", url=INVITE_LINK))
-    return kb
+</style>
+</head>
 
-# ========= FULL FUNNEL START =========
-@bot.message_handler(commands=['start'])
-def start_cmd(message):
-    save_user(message.from_user)
-    name = message.from_user.first_name or "Trader"
+<body>
 
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🔗 Register on DM Win", callback_data="register"))
+<div class="header">🎯 WinGo Live DM Pattern</div>
 
-    text = f"""👋🏻 Hello {name} Welcome Back!
+<div class="card">
 
-🚀 Get full access to unlimited premium trading signals.
+<div>Current Period</div>
+<div id="period">Loading...</div>
 
-🏆 For every 10 trades, win 8 to 9 trades on average.
+<div>Current Result</div>
+<div id="result">--</div>
 
-📌 Step 1: Create your DM Win account:
-Click the button below to register 👇
+<div>Previous</div>
+<div id="previous">--</div>
 
-📌 Step 2: After signing up, send your 7-digit DM Win User ID here to verify.
+<div style="margin-top:10px">Next Prediction</div>
+<div id="prediction" class="pred">BIG</div>
 
-⚠️ Without registration & verification, VIP signals will NOT unlock.
+<div id="status"></div>
 
-💎 Features:
-• Advance AI Signals
-• Live Predictions
-• Win/Loss Tracking
-• Premium Accuracy"""
+<div style="margin-top:10px">Timer</div>
+<div id="timer" class="timer">60</div>
 
-    bot.send_message(message.chat.id, text, reply_markup=kb)
+</div>
 
-# ========= REGISTER =========
-@bot.callback_query_handler(func=lambda c: c.data == "register")
-def reg_click(call):
-    track_click(call.from_user.id)
-    bot.send_message(call.from_user.id, f"🔗 Official Register Link:\n{INVITE_LINK}")
+<div class="card">
+<h3>History</h3>
+<div id="history"></div>
+</div>
 
-# ========= ID SUBMIT =========
-@bot.message_handler(func=lambda m: m.text and m.text.isdigit() and len(m.text) == 7)
-def id_submit(message):
-    uid = message.from_user.id
-    pending_ids[uid] = message.text
+<div class="footer">
+Last Result → <span id="footer">--</span>
+</div>
 
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("✅ Approve", callback_data=f"approve_{uid}"),
-        InlineKeyboardButton("❌ Reject", callback_data=f"reject_{uid}")
-    )
+<script>
 
-    bot.send_message(ADMIN_ID, f"📩 New DM Win ID\nUser: {uid}\nID: {message.text}", reply_markup=kb)
-    bot.send_message(uid, "⏳ Your ID is under review.")
+let t = 60
+let lastIssue = ""
+let prediction = rand()
 
-# ========= APPROVAL =========
-@bot.callback_query_handler(func=lambda c: c.data.startswith(("approve_","reject_")))
-def approve_user(call):
-    if call.from_user.id != ADMIN_ID:
-        return
+function rand(){
+return Math.random()>0.5 ? "BIG":"SMALL"
+}
 
-    action, uid = call.data.split("_")
-    uid = int(uid)
+function size(n){
+return n>=5 ? "BIG":"SMALL"
+}
 
-    if action == "approve":
-        user_stage[uid] = 2
-        bot.send_message(uid, "✅ VIP Activated!\n🎯 Signals Started Automatically.")
-    else:
-        bot.send_message(uid, "❌ Invalid ID.")
+function color(s){
+return s=="BIG"?"big":"small"
+}
 
-# ========= ADMIN PANEL =========
-@bot.message_handler(commands=['admin'])
-def admin_panel(message):
-    if message.from_user.id != ADMIN_ID:
-        return
+// DM style period
+function dmPeriod(){
 
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("📊 Stats", callback_data="stats"),
-        InlineKeyboardButton("👥 Users", callback_data="users"),
-        InlineKeyboardButton("🔗 Click Stats", callback_data="clicks"),
-        InlineKeyboardButton("▶️ Start Signals", callback_data="start_sig"),
-        InlineKeyboardButton("⛔ Stop Signals", callback_data="stop_sig"),
-    )
+let d = new Date()
 
-    bot.send_message(message.chat.id, "👑 ADMIN PANEL", reply_markup=kb)
+let yyyy = d.getFullYear()
+let mm = String(d.getMonth()+1).padStart(2,'0')
+let dd = String(d.getDate()).padStart(2,'0')
 
-@bot.callback_query_handler(func=lambda c: c.data in ["stats","users","clicks","start_sig","stop_sig"])
-def admin_buttons(call):
-    global signals_enabled
+let totalMin = Math.floor(d.getTime()/60000)
+let round = String(totalMin%1000).padStart(3,'0')
 
-    if call.from_user.id != ADMIN_ID:
-        return
+return `${yyyy}${mm}${dd}10001${round}`
+}
 
-    if call.data == "stats":
-        bot.send_message(ADMIN_ID, f"Signals: {total_signals}\nWins: {wins}\nLoss: {losses}")
+function timer(){
 
-    elif call.data == "users":
-        bot.send_message(ADMIN_ID, f"Total Users: {len(users)}\nVIP Users: {len(get_vip_users())}")
+setInterval(()=>{
 
-    elif call.data == "clicks":
-        total_clicks = sum(clicks_data.values())
-        bot.send_message(ADMIN_ID, f"Total Clicks: {total_clicks}")
+t--
 
-    elif call.data == "start_sig":
-        signals_enabled = True
-        bot.send_message(ADMIN_ID, "Signals Started")
+if(t<=0){
+t=60
+load()
+prediction = rand()
+document.getElementById("prediction").innerText = prediction
+}
 
-    elif call.data == "stop_sig":
-        signals_enabled = False
-        bot.send_message(ADMIN_ID, "Signals Stopped")
+document.getElementById("timer").innerText = t
 
-# ========= SIGNAL SYSTEM =========
-def get_api():
-    try:
-        url = API_URL + str(int(time.time()*1000))
-        return requests.get(url, timeout=10).json()
-    except:
-        return None
+},1000)
 
-def number_to_bs(n):
-    return "BIG" if int(n) >= 5 else "SMALL"
+}
 
-def ai_predict(history):
-    results = []
-    for item in history[:10]:
-        num = int(item.get("number", 0))
-        results.append("BIG" if num >= 5 else "SMALL")
-    return "BIG" if results.count("BIG") > results.count("SMALL") else "SMALL"
+function load(){
 
-def signal_loop():
-    global last_finished_period, wins, losses, total_signals
+fetch("https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?ts="+Date.now())
+.then(r=>r.json())
+.then(d=>{
 
-    while True:
-        if not signals_enabled:
-            time.sleep(2)
-            continue
+let list = d.data.list
 
-        data = get_api()
-        if not data:
-            time.sleep(2)
-            continue
+let cur = list[0]
+let prev = list[1]
 
-        history = data["data"]["list"]
-        latest = history[0]
-        finished = latest["issueNumber"]
-        number = latest["number"]
-        vip_users = get_vip_users()
+let curSize = size(parseInt(cur.number))
+let prevSize = size(parseInt(prev.number))
 
-        if finished in predictions:
-            pred = predictions.pop(finished)
-            actual = number_to_bs(number)
-            total_signals += 1
+document.getElementById("period").innerText = dmPeriod()
 
-            if pred == actual:
-                wins += 1
-                for uid in vip_users:
-                    bot.send_message(uid,
-                        f"🏆 WIN RESULT\n\nPeriod: {finished}\nPrediction: {pred}\nResult: {actual}",
-                        reply_markup=signal_markup())
-                    bot.send_sticker(uid, WIN_STICKER_1)
-                    bot.send_sticker(uid, WIN_STICKER_2)
-            else:
-                losses += 1
-                for uid in vip_users:
-                    bot.send_message(uid,
-                        f"❌ LOSS RESULT\n\nPeriod: {finished}\nPrediction: {pred}\nResult: {actual}",
-                        reply_markup=signal_markup())
-                    bot.send_sticker(uid, LOSS_STICKER)
+document.getElementById("result").innerHTML =
+`<span class="${color(curSize)}">${curSize}</span>`
 
-        if finished and finished != last_finished_period:
-            last_finished_period = finished
-            next_period = str(int(finished) + 1)
-            signal = ai_predict(history)
-            predictions[next_period] = signal
+document.getElementById("previous").innerHTML =
+prev.issueNumber+" → <span class='"+color(prevSize)+"'>"+prevSize+"</span>"
 
-            for uid in vip_users:
-                bot.send_message(uid,
-                    f"🎯 VIP LIVE SIGNAL\n\nNext Period: {next_period}\nPrediction: {signal}",
-                    reply_markup=signal_markup())
+document.getElementById("footer").innerText =
+prev.issueNumber+" → "+prevSize
 
-        time.sleep(2)
+// win loss
+if(lastIssue != cur.issueNumber){
 
-threading.Thread(target=signal_loop, daemon=True).start()
+if(curSize == prediction){
+document.getElementById("status").innerHTML="<div class='win'>WIN</div>"
+}else{
+document.getElementById("status").innerHTML="<div class='loss'>LOSS</div>"
+}
 
-app = Flask(__name__)
+addHistory(cur.issueNumber,curSize)
 
-@app.route('/')
-def home():
-    return "Bot is running"
+lastIssue = cur.issueNumber
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+}
 
-print("🚀 FULL FINAL WORKING BOT RUNNING")
+})
 
-threading.Thread(target=run_web, daemon=True).start()
+}
 
-bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+function addHistory(issue,res){
+
+let box = document.getElementById("history")
+
+let div = document.createElement("div")
+div.className="row"
+
+div.innerHTML =
+`<div>${issue}</div><div class="${color(res)}">${res}</div>`
+
+box.prepend(div)
+
+}
+
+document.getElementById("prediction").innerText = prediction
+
+timer()
+load()
+
+</script>
+
+</body>
+</html>
